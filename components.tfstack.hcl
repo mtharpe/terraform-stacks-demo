@@ -7,6 +7,7 @@ component "cluster" {
   providers = {
     aws = provider.aws.main
     random = provider.random.main
+    kubernetes = provider.kubernetes.main
   }
 
   inputs = {
