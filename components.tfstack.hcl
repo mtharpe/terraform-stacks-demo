@@ -7,7 +7,6 @@ component "cluster" {
   providers = {
     aws = provider.aws.main
     random = provider.random.main
-    kubernetes = provider.kubernetes.main
   }
 
   inputs = {
@@ -23,5 +22,10 @@ component "kube" {
 
   providers = {
     kubernetes = provider.kubernetes.main
+  }
+
+  inputs = {
+    node_group_role_arn = component.cluster.node_group_role_arn
+    admin_user_arn     = component.cluster.admin_user_arn
   }
 }
