@@ -12,7 +12,8 @@ component "cluster" {
   inputs = {
     cluster_name       = var.cluster_name
     kubernetes_version = var.kubernetes_version
-    region = var.region
+    region             = var.region
+    admin_user_arn     = var.admin_user_arn
   }
 }
 

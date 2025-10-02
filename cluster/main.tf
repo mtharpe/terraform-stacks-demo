@@ -65,3 +65,38 @@ resource "aws_eks_node_group" "demo" {
 data "aws_eks_cluster_auth" "demo" {
   name = aws_eks_cluster.demo.name
 }
+
+# ConfigMap for EKS cluster authentication and authorization
+resource "kubernetes_config_map_v1" "aws_auth" {
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  data = {
+    mapRoles = yamlencode([
+      {
+        rolearn  = aws_iam_role.demo-node.arn
+        username = "system:node:{{EC2PrivateDNSName}}"
+        groups = [
+          "system:bootstrappers",
+          "system:nodes",
+        ]
+      }
+    ])
+    
+    mapUsers = yamlencode([
+      {
+        userarn  = var.admin_user_arn
+        username = "admin-user"
+        groups = [
+          "system:masters"
+        ]
+      }
+    ])
+  }
+
+  depends_on = [
+    aws_eks_cluster.demo
+  ]
+}
