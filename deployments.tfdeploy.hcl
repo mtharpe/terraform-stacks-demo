@@ -8,7 +8,7 @@ identity_token "aws" {
 deployment "development" {
   inputs = {
     cluster_name        = "stacks-demo"
-    kubernetes_version  = "1.30"
+    kubernetes_version  = "1.31"
     region              = "us-east-2"
     role_arn            = "arn:aws:iam::625172872027:role/stacks-Axis-Personal-AWS"
     identity_token      = identity_token.aws.jwt
