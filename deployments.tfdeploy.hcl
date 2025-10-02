@@ -14,4 +14,5 @@ deployment "development" {
     identity_token      = identity_token.aws.jwt
     default_tags        = { stacks-preview-example = "eks-deferred-stack" }
   }
+  destroy = tue
 }
