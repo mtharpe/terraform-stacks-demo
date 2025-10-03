@@ -11,7 +11,3 @@ workflows:
           resource_class: small
           requires:
             - terraform/fmt
-      - terraform/plan:
-          resource_class: small
-          requires:
-            - terraform/validate
