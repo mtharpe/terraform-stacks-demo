@@ -22,4 +22,8 @@ component "kube" {
   providers = {
     kubernetes = provider.kubernetes.main
   }
+
+  inputs = {
+    admin_user_arn = var.admin_user_arn
+  }
 }

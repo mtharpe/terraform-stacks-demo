@@ -36,3 +36,25 @@ resource "kubernetes_manifest" "demo_workspace" {
     }
   }
 }
+
+# Patch the aws-auth ConfigMap to add admin user access
+# This preserves the node roles that EKS creates automatically
+resource "kubernetes_config_map_v1_data" "aws_auth_users" {
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+  
+  data = {
+    mapUsers = yamlencode([
+      {
+        userarn  = var.admin_user_arn
+        username = "admin-user"
+        groups   = ["system:masters"]
+      }
+    ])
+  }
+  
+  # This resource patches existing data without overwriting mapRoles
+  force = true
+}
