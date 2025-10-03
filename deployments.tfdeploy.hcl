@@ -16,8 +16,6 @@ deployment "development" {
     default_tags        = { stacks-preview-example = "eks-deferred-stack" }
   }
   
-  # Enable auto-apply for this deployment
-  auto_approve = true
   # Destroy the stack if set to true
   destroy = true
 }
