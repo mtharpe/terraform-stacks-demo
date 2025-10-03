@@ -9,6 +9,7 @@ This Terraform Stacks configuration creates:
 - VPC and networking infrastructure 
 - A Kubernetes namespace and Custom Resource Definition (CRD) for Terraform workspaces
 - A deferred Terraform workspace resource that can be managed through the Kubernetes API
+- Automated user access configuration via aws-auth ConfigMap
 
 The project showcases Terraform Stacks' ability to:
 - Organize infrastructure into reusable components
@@ -23,6 +24,7 @@ The project showcases Terraform Stacks' ability to:
 ├── deployments.tfdeploy.hcl    # Deployment configurations
 ├── providers.tfstack.hcl       # Provider configurations and requirements
 ├── variables.tfstack.hcl       # Stack-level variable definitions
+├── eks-kube-config.sh          # Script to discover clusters and configure kubectl
 ├── cluster/                    # EKS cluster component
 │   ├── main.tf                 # EKS cluster and node group resources
 │   ├── vpc.tf                  # VPC, subnets, and networking
@@ -31,13 +33,14 @@ The project showcases Terraform Stacks' ability to:
 │   └── outputs.tf              # Component outputs (cluster info)
 └── kube/                       # Kubernetes resources component
     ├── crd.tf                  # Custom Resource Definition for workspaces
-    └── kube.tf                 # Kubernetes namespace and workspace manifest
+    ├── kube.tf                 # Kubernetes namespace, workspace manifest, and user access
+    └── variables.tf            # Component input variables
 ```
 
 ### Components
 
 - **cluster**: Creates the EKS cluster infrastructure including VPC, subnets, security groups, and IAM roles
-- **kube**: Deploys Kubernetes resources including a CRD and a deferred workspace resource
+- **kube**: Deploys Kubernetes resources including a CRD, a deferred workspace resource, and configures user access via aws-auth ConfigMap
 
 ### Stacks Configuration Files
 
@@ -110,9 +113,10 @@ Edit `deployments.tfdeploy.hcl` and update the following values:
 deployment "development" {
   inputs = {
     cluster_name        = "your-cluster-name"      # Change to your preferred name
-    kubernetes_version  = "1.30"                   # Update to desired K8s version
+    kubernetes_version  = "1.31"                   # Update to desired K8s version
     region              = "us-east-2"              # Change to your preferred region
     role_arn            = "<YOUR_ROLE_ARN>"        # Replace with your IAM role ARN
+    admin_user_arn      = "<YOUR_USER_ARN>"        # Replace with your IAM user ARN
     identity_token      = identity_token.aws.jwt
     default_tags        = { 
       project = "terraform-stacks-demo"
@@ -137,16 +141,39 @@ terraform apply
 
 ### 3. Access the EKS Cluster
 
-After successful deployment:
+After successful deployment, use the included script to discover and configure access to your cluster:
 
 ```bash
-# Update your kubeconfig to access the cluster
+# Make the script executable
+chmod +x ./eks-kube-config.sh
+
+# Auto-discover clusters and configure kubectl
+./eks-kube-config.sh
+
+# Or specify a cluster suffix directly (if you know it)
+./eks-kube-config.sh <cluster-suffix>
+```
+
+The script will:
+- Discover all Terraform Stacks EKS clusters
+- Show cluster details (status, version, creation date)
+- Configure your kubeconfig with the selected cluster
+- Test the connection and provide helpful next steps
+
+**Manual kubectl configuration (alternative):**
+```bash
+# List clusters to find the name
+aws eks list-clusters --region <your-region>
+
+# Update your kubeconfig manually
 aws eks update-kubeconfig --region <your-region> --name <cluster-name>
 
-# Verify cluster access
+# Verify cluster access (should work automatically with admin_user_arn configured)
 kubectl get nodes
+```
 
-# Check the deployed resources
+**Verify deployed resources:**
+```bash
 kubectl get namespace
 kubectl get crd workspaces.app.terraform.io
 kubectl get workspace -n demo-ns
@@ -162,6 +189,9 @@ kubectl describe crd workspaces.app.terraform.io
 
 # Check the workspace resource (this will be deferred initially)
 kubectl describe workspace deferred-demo -n demo-ns
+
+# Verify your user access in aws-auth ConfigMap
+kubectl get configmap aws-auth -n kube-system -o yaml
 ```
 
 ## Cleanup
@@ -198,14 +228,32 @@ aws iam detach-role-policy --role-name <your-role-name> --policy-arn arn:aws:iam
 aws iam delete-role --role-name <your-role-name>
 ```
 
+## User Access Management
+
+This demo automatically configures user access to the EKS cluster through Terraform Stacks:
+
+- **admin_user_arn** variable in `deployments.tfdeploy.hcl` specifies which IAM user gets admin access
+- The **kube component** automatically patches the aws-auth ConfigMap to grant system:masters permissions
+- **No manual kubectl patching required** - access is configured during deployment
+- **OIDC trust relationship** remains intact for Terraform Stacks operations
+
+### Cluster Discovery Script
+
+The included `eks-kube-config.sh` script provides:
+- **Auto-discovery** of Terraform Stacks EKS clusters
+- **Interactive selection** for multiple clusters
+- **Automatic kubeconfig setup** with named contexts
+- **Connection testing** and helpful feedback
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Authentication Errors**: Ensure your IAM role has the correct trust policy and permissions
+1. **Authentication Errors**: Ensure your IAM role has the correct trust policy and permissions, and admin_user_arn is set correctly
 2. **Region Mismatches**: Verify the region in `deployments.tfdeploy.hcl` matches your AWS configuration
 3. **Resource Limits**: Check AWS service limits for EKS clusters and EC2 instances in your account
 4. **Network Issues**: Ensure your VPC CIDR blocks don't conflict with existing networks
+5. **Cluster Access**: If kubectl access fails, verify your admin_user_arn is correctly specified and the deployment completed successfully
 
 ### Getting Help
 
@@ -217,4 +265,3 @@ aws iam delete-role --role-name <your-role-name>
 ## License
 
 This project is licensed under the Mozilla Public License 2.0 - see the LICENSE file for details.
-

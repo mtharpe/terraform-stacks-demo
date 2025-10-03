@@ -65,5 +65,3 @@ resource "aws_eks_node_group" "demo" {
 data "aws_eks_cluster_auth" "demo" {
   name = aws_eks_cluster.demo.name
 }
-
-

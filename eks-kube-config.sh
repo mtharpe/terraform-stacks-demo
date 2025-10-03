@@ -1,134 +1,97 @@
 #!/bin/bash
 
-# Script to configure EKS access for your user WITHOUT breaking Terraform Stacks OIDC
-# Usage: ./eks-kube-config.sh <cluster-suffix>
+# Script to discover Terraform Stacks EKS clusters and configure local kubeconfig
+# Usage: ./eks-kube-config.sh [cluster-suffix]
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 <cluster-suffix>"
-    echo "Example: $0 a1b2 (for cluster stacks-demo-a1b2)"
-    exit 1
-fi
-
-CLUSTER_NAME="stacks-demo-$1"
 REGION="us-east-2"
-USER_ARN="arn:aws:iam::625172872027:user/tharpem"
-ROLE_ARN="arn:aws:iam::625172872027:role/stacks-Axis-Personal-AWS"
+CLUSTER_PREFIX="stacks-demo"
 
-echo "Configuring EKS access for user without breaking Terraform Stacks OIDC..."
-echo "Cluster: $CLUSTER_NAME"
+echo "🔍 Discovering Terraform Stacks EKS clusters..."
 
-# Step 1: Check if cluster exists
-echo "Checking if cluster exists..."
-if ! aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" >/dev/null 2>&1; then
-    echo "ERROR: Cluster $CLUSTER_NAME not found in region $REGION"
+# Get all EKS clusters with our prefix
+CLUSTERS=($(aws eks list-clusters --region "$REGION" --query "clusters[?starts_with(@, '$CLUSTER_PREFIX')]" --output text))
+
+if [ ${#CLUSTERS[@]} -eq 0 ]; then
+    echo "❌ No EKS clusters found with prefix '$CLUSTER_PREFIX' in region $REGION"
     exit 1
 fi
 
-# Step 2: Check current authentication mode
-AUTH_MODE=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --query 'cluster.accessConfig.authenticationMode' --output text 2>/dev/null || echo "CONFIG_MAP")
-echo "Current authentication mode: $AUTH_MODE"
-
-if [ "$AUTH_MODE" = "API" ] || [ "$AUTH_MODE" = "API_AND_CONFIG_MAP" ]; then
-    echo "Using EKS Access Entry API (newer method)..."
+echo "📋 Found ${#CLUSTERS[@]} cluster(s):"
+for i in "${!CLUSTERS[@]}"; do
+    CLUSTER_NAME="${CLUSTERS[$i]}"
+    CLUSTER_STATUS=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --query 'cluster.status' --output text)
+    CLUSTER_VERSION=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --query 'cluster.version' --output text)
+    CREATED_DATE=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$REGION" --query 'cluster.createdAt' --output text)
     
-    # Check if access entry already exists
-    if aws eks describe-access-entry --cluster-name "$CLUSTER_NAME" --principal-arn "$USER_ARN" --region "$REGION" >/dev/null 2>&1; then
-        echo "Access entry already exists for user: $USER_ARN"
-    else
-        echo "Creating access entry for user..."
-        aws eks create-access-entry \
-            --cluster-name "$CLUSTER_NAME" \
-            --principal-arn "$USER_ARN" \
-            --region "$REGION"
-            
-        echo "Associating admin policy..."
-        aws eks associate-access-policy \
-            --cluster-name "$CLUSTER_NAME" \
-            --principal-arn "$USER_ARN" \
-            --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
-            --access-scope type=cluster \
-            --region "$REGION"
+    echo "  $((i+1)). $CLUSTER_NAME (Status: $CLUSTER_STATUS, Version: $CLUSTER_VERSION, Created: $CREATED_DATE)"
+done
+
+# If specific cluster suffix provided, use it
+if [ -n "$1" ]; then
+    TARGET_CLUSTER="$CLUSTER_PREFIX-$1"
+    
+    # Check if the specified cluster exists in our list
+    FOUND=false
+    for cluster in "${CLUSTERS[@]}"; do
+        if [ "$cluster" = "$TARGET_CLUSTER" ]; then
+            FOUND=true
+            break
+        fi
+    done
+    
+    if [ "$FOUND" = false ]; then
+        echo "❌ Cluster '$TARGET_CLUSTER' not found"
+        exit 1
     fi
     
+    SELECTED_CLUSTER="$TARGET_CLUSTER"
 else
-    echo "Using CONFIG_MAP authentication mode (older method)..."
-    echo ""
-    echo "⚠️  MANUAL STEP REQUIRED:"
-    echo "Since this cluster uses CONFIG_MAP authentication and we don't want to break"
-    echo "the Terraform Stacks OIDC setup, you need to manually add your user to the"
-    echo "aws-auth ConfigMap from within HCP Terraform or ask someone with admin access."
-    echo ""
-    echo "Option 1: Add this to your Terraform configuration and redeploy:"
-    echo "---"
-    echo "resource \"kubernetes_config_map\" \"aws_auth_patch\" {"
-    echo "  metadata {"
-    echo "    name      = \"aws-auth\""
-    echo "    namespace = \"kube-system\""
-    echo "  }"
-    echo ""
-    echo "  data = {"
-    echo "    mapUsers = yamlencode(["
-    echo "      {"
-    echo "        userarn  = \"$USER_ARN\""
-    echo "        username = \"admin-user\""
-    echo "        groups = [\"system:masters\"]"
-    echo "      }"
-    echo "    ])"
-    echo "  }"
-    echo ""
-    echo "  lifecycle {"
-    echo "    ignore_changes = [data[\"mapRoles\"]]"
-    echo "  }"
-    echo "}"
-    echo "---"
-    echo ""
-    echo "Option 2: Ask someone with cluster admin access to run:"
-    echo "kubectl patch configmap/aws-auth -n kube-system --patch '{"
-    echo "  \"data\": {"
-    echo "    \"mapUsers\": \"- userarn: $USER_ARN\\n  username: admin-user\\n  groups:\\n  - system:masters\""
-    echo "  }"
-    echo "}'"
-    echo ""
-    exit 0
+    # Interactive selection if multiple clusters or no argument provided
+    if [ ${#CLUSTERS[@]} -eq 1 ]; then
+        SELECTED_CLUSTER="${CLUSTERS[0]}"
+        echo "📌 Auto-selecting the only available cluster: $SELECTED_CLUSTER"
+    else
+        echo ""
+        read -p "🎯 Select cluster number (1-${#CLUSTERS[@]}): " selection
+        
+        if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt ${#CLUSTERS[@]} ]; then
+            echo "❌ Invalid selection"
+            exit 1
+        fi
+        
+        SELECTED_CLUSTER="${CLUSTERS[$((selection-1))]}"
+    fi
 fi
 
-# Step 3: Configure kubeconfig for your user (not the role)
-echo "Configuring kubeconfig for your user..."
-aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
+echo ""
+echo "🔗 Configuring kubeconfig for cluster: $SELECTED_CLUSTER"
 
-# Step 4: Test access
-echo "Testing access..."
-sleep 5  # Wait a moment for changes to propagate
-if kubectl get nodes >/dev/null 2>&1; then
+# Update kubeconfig
+aws eks update-kubeconfig --region "$REGION" --name "$SELECTED_CLUSTER" --alias "$SELECTED_CLUSTER"
+
+if [ $? -eq 0 ]; then
+    echo "✅ Successfully configured kubeconfig!"
+    echo "📝 Context name: $SELECTED_CLUSTER"
     echo ""
-    echo "🎉 SUCCESS! You now have admin access to the EKS cluster!"
-    echo ""
-    kubectl get nodes
-    echo ""
-    echo "You can now use kubectl commands with your user credentials."
-else
-    echo "⏳ Access test failed. Changes may take a moment to propagate."
-    echo "Try running: kubectl get nodes"
-fi
     
+    # Test connection
+    echo "🧪 Testing connection..."
+    if kubectl get nodes --context "$SELECTED_CLUSTER" >/dev/null 2>&1; then
+        echo "🎉 SUCCESS! Connected to cluster $SELECTED_CLUSTER"
+        echo ""
+        echo "📊 Cluster nodes:"
+        kubectl get nodes --context "$SELECTED_CLUSTER"
+        echo ""
+        echo "🔧 To use this cluster:"
+        echo "   kubectl --context $SELECTED_CLUSTER get nodes"
+        echo "   # or switch context:"
+        echo "   kubectl config use-context $SELECTED_CLUSTER"
+    else
+        echo "⚠️  kubeconfig updated but connection test failed."
+        echo "💡 This likely means you don't have access to the cluster yet."
+        echo "   Make sure your user is added to the aws-auth ConfigMap via Terraform Stacks deployment."
+    fi
 else
-    echo "ERROR: Cannot assume role $ROLE_ARN"
-    echo ""
-    echo "SOLUTION 1: Ask someone with access to the role to run this command:"
-    echo "kubectl patch configmap/aws-auth -n kube-system --patch '{\"data\":{\"mapUsers\":\"- userarn: $USER_ARN\\n  username: admin-user\\n  groups:\\n  - system:masters\\n\"}}'"
-    echo ""
-    echo "SOLUTION 2: Add assume role permission to your user with this policy:"
-    echo "{"
-    echo "    \"Version\": \"2012-10-17\","
-    echo "    \"Statement\": ["
-    echo "        {"
-    echo "            \"Effect\": \"Allow\","
-    echo "            \"Action\": \"sts:AssumeRole\","
-    echo "            \"Resource\": \"$ROLE_ARN\""
-    echo "        }"
-    echo "    ]"
-    echo "}"
-    echo ""
-    echo "SOLUTION 3: Update kubeconfig to always use the role (if you have access):"
-    echo "aws eks update-kubeconfig --region $REGION --name $CLUSTER_NAME --role-arn $ROLE_ARN"
+    echo "❌ Failed to update kubeconfig"
+    exit 1
 fi

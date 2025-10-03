@@ -29,6 +29,6 @@ variable "default_tags" {
 }
 
 variable "admin_user_arn" {
-  description = "ARN of the AWS user to grant admin access to the EKS cluster"  
+  description = "ARN of the AWS user to grant admin access to the EKS cluster"
   type        = string
 }
