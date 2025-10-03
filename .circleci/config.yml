@@ -1,0 +1,17 @@
+version: 2.1
+description: Validate and format Terraform files
+orbs:
+  terraform: circleci/terraform@3.2.1
+workflows:
+  terraform:
+    jobs:
+      - terraform/fmt:
+          resource_class: small
+      - terraform/validate:
+          resource_class: small
+          requires:
+            - terraform/fmt
+      - terraform/plan:
+          resource_class: small
+          requires:
+            - terraform/validate
