@@ -27,8 +27,3 @@ variable "default_tags" {
   type        = map(string)
   default     = {}
 }
-
-variable "admin_user_arn" {
-  description = "ARN of the AWS user or role to grant admin access to the EKS cluster"
-  type        = string
-}

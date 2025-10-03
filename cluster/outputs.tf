@@ -13,11 +13,3 @@ output "cluster_token" {
   sensitive = true
   value = data.aws_eks_cluster_auth.demo.token
 }
-
-output "node_group_role_arn" {
-  value = aws_iam_role.demo-node.arn
-}
-
-output "admin_user_arn" {
-  value = var.admin_user_arn
-}
