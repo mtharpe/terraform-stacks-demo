@@ -1,0 +1,32 @@
+{
+  // Disable enhanced validation for Terraform Stacks files
+  "terraform.validation.enableEnhancedValidation": false,
+  
+  // Disable experimental features that might interfere
+  "terraform.experimentalFeatures.validateOnSave": false,
+  "terraform.experimentalFeatures.prefillRequiredFields": false,
+  
+  // Configure file associations for Terraform Stacks
+  "files.associations": {
+    "*.tfstack.hcl": "hcl",
+    "*.tfdeploy.hcl": "hcl"
+  },
+  
+  // HCL language settings
+  "hcl.format.enable": true,
+  
+  // Disable problematic language servers for these files
+  "[hcl]": {
+    "editor.defaultFormatter": "hashicorp.hcl"
+  },
+  
+  // Additional file exclusions
+  "files.exclude": {
+    "**/.terraform": true,
+    "**/.terraform.lock.hcl": false
+  },
+  
+  "files.watcherExclude": {
+    "**/.terraform/**": true
+  }
+}
